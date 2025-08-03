@@ -1,4 +1,4 @@
-# app.py (진짜 최종 버전 v2.7 - 오류 완벽 수정)
+# app.py (v2.8)
 
 import streamlit as st
 import yt_dlp
@@ -8,9 +8,10 @@ from PIL import Image
 import requests
 from io import BytesIO
 
-# --- 설정값 정의 ---
+# --- 페이지 기본 설정 ---
 st.set_page_config(page_title="Pro Downloader", page_icon="🚀", layout="centered")
 
+# --- 설정값 정의 ---
 VIDEO_FORMATS = {
     "mp4": "MP4 (권장, 높은 호환성)", "mkv": "MKV (고품질, 다중트랙 지원)",
     "webm": "WebM (웹 최적화, 고효율)", "mov": "MOV (Apple, 영상 편집용)",
@@ -47,7 +48,7 @@ def get_available_resolutions(video_info):
 
 # --- 웹사이트 UI 구성 ---
 st.title("🚀 Pro YouTube Downloader")
-st.caption("v2.7 The Real Final")
+st.caption("v2.8")
 
 if 'video_info' not in st.session_state: st.session_state.video_info = None
 if 'download_result' not in st.session_state: st.session_state.download_result = None
@@ -98,24 +99,26 @@ if st.session_state.video_info:
             is_lossless = selected_ext in ['flac', 'wav']
             selected_quality_str = st.selectbox("음원 품질", list(AUDIO_QUALITY_MAP.keys()), key="audio_quality", disabled=is_lossless, help="무손실 형식(flac, wav)은 항상 최고 음질로 저장됩니다.")
 
+    # --- 다운로드 버튼 로직 ---
     if st.button("다운로드 시작", use_container_width=True):
-        progress_bar = st.progress(0, text="다운로드를 준비 중입니다...")
         
-        # 파일 이름에 포함될 수 있는 특수문자 및 이모지 문제 해결
-        ydl_opts = {
-            'progress_hooks': [progress_hook],
-            'ffmpeg_location': '/usr/bin/ffmpeg',
-            'outtmpl': '%(title)s.%(ext)s',
-            'restrictfilenames': True, # 이 옵션이 파일 이름 오류를 방지함
-            'postprocessors': []
-        }
-
+        # <<<--- 이 위치로 함수를 옮겼습니다! ---<<<
         def progress_hook(d):
             if d['status'] == 'downloading':
                 total = d.get('total_bytes') or d.get('total_bytes_estimate')
                 if total: progress_bar.progress(d['downloaded_bytes'] / total, text=f"다운로드 중... {int(d['downloaded_bytes'] / total * 100)}%")
             elif d['status'] == 'finished':
                  progress_bar.progress(1.0, text="파일 처리 및 변환 중...")
+        
+        progress_bar = st.progress(0, text="다운로드를 준비 중입니다...")
+        
+        ydl_opts = {
+            'progress_hooks': [progress_hook],
+            'ffmpeg_location': '/usr/bin/ffmpeg',
+            'outtmpl': '%(title)s.%(ext)s',
+            'restrictfilenames': True,
+            'postprocessors': []
+        }
 
         if download_type == "영상 + 음성":
             res_val = selected_res.replace('p', '')
@@ -125,11 +128,17 @@ if st.session_state.video_info:
             ydl_opts['merge_output_format'] = selected_ext
             
             # 후처리 대신 ffmpeg_args를 사용하여 안정성 확보
-            ydl_opts['postprocessor_args'] = {
-                'video': ['-vf', f'fps={selected_fps}'],
-                'audio': ['-q:a', audio_quality_selector]
-            }
-        else:
+            # 이 방식은 현재 yt-dlp에서 더 이상 권장되지 않으므로 postprocessors 방식으로 복귀
+            ydl_opts['postprocessors'] = [
+                {'key': 'FFmpegVideoConvertor', 'preferedformat': selected_ext},
+                {'key': 'FFmpegVideoFilter', 'filters': f'fps={selected_fps}'},
+                {'key': 'FFmpegExtractAudio', 'preferredcodec': 'aac', 'preferredquality': audio_quality_selector},
+            ]
+            # 병합 후 오디오를 다시 인코딩해야 하므로 merge_output_format을 제거하고 postprocessor로 처리
+            ydl_opts.pop('merge_output_format', None)
+            ydl_opts['format'] = f'bestvideo[height<={res_val}]+bestaudio/best'
+
+        else: # 음원만
             audio_quality = AUDIO_QUALITY_MAP.get(selected_quality_str, "5") if not is_lossless else "0"
             ydl_opts['format'] = 'bestaudio/best'
             ydl_opts['postprocessors'].append({'key': 'FFmpegExtractAudio', 'preferredcodec': selected_ext, 'preferredquality': audio_quality})
@@ -137,14 +146,33 @@ if st.session_state.video_info:
         try:
             # 다운로드 전, 파일 이름을 미리 가져와서 사용
             info_dict = yt_dlp.YoutubeDL({'quiet': True, 'restrictfilenames': True}).extract_info(url, download=False)
-            final_filename = f"{info_dict['title']}.{selected_ext}"
+            base_filename = info_dict['title']
 
+            if download_type == '음원만':
+                final_filename = f"{base_filename}.{selected_ext}"
+            else: # 영상 + 음성
+                # yt-dlp는 병합 시 기본적으로 mkv를 사용하므로, 최종 확장자를 고려해야 함
+                # 최종 파일 이름은 후처리 후 결정됨
+                final_filename = f"{base_filename}.{selected_ext}"
+
+            # 다운로드 실행
             with yt_dlp.YoutubeDL(ydl_opts) as ydl: ydl.download([url])
-
-            with open(final_filename, "rb") as file: file_bytes = file.read()
             
-            st.session_state.download_result = { "file_name": final_filename, "file_bytes": file_bytes }
-            os.remove(final_filename)
+            # 실제 생성된 파일 이름 찾기 (가장 확실한 방법)
+            # yt-dlp가 후처리 후 이름을 바꿀 수 있으므로, 현재 디렉토리에서 예상 파일 이름으로 찾음
+            actual_filename = None
+            for f in os.listdir('.'):
+                if f.startswith(base_filename) and f.endswith(f'.{selected_ext}'):
+                    actual_filename = f
+                    break
+            
+            if not actual_filename or not os.path.exists(actual_filename):
+                raise FileNotFoundError("처리된 최종 파일을 찾을 수 없습니다. 옵션을 변경하여 다시 시도해주세요.")
+
+            with open(actual_filename, "rb") as file: file_bytes = file.read()
+            
+            st.session_state.download_result = { "file_name": actual_filename, "file_bytes": file_bytes }
+            os.remove(actual_filename)
             progress_bar.empty()
 
         except Exception as e:
