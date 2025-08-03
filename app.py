@@ -1,4 +1,4 @@
-# app.py (v3.0 - 안정성 최우선)
+# app.py (v3.1 - 403 Forbidden 우회)
 
 import streamlit as st
 import yt_dlp
@@ -17,7 +17,16 @@ AUDIO_QUALITY_MAP = { "Best (최고 음질)": "0", "High (256k)": "2", "Standard
 @st.cache_data(ttl=3600)
 def fetch_video_info(url):
     try:
-        ydl_opts = {'quiet': True, 'no_warnings': True, 'skip_download': True}
+        # 403 Forbidden 오류를 우회하기 위한 헤더 추가
+        ydl_opts = {
+            'quiet': True, 
+            'no_warnings': True, 
+            'skip_download': True,
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36',
+                'Accept-Language': 'en-US,en;q=0.5',
+            }
+        }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             return ydl.extract_info(url, download=False)
     except Exception as e:
@@ -43,7 +52,7 @@ def get_available_formats(video_info):
 
 # --- 웹사이트 UI 구성 ---
 st.title("🚀 Pro Downloader")
-st.caption("v3.0 (Stability First)")
+st.caption("v3.1")
 
 if 'video_info' not in st.session_state: st.session_state.video_info = None
 if 'download_result' not in st.session_state: st.session_state.download_result = None
@@ -96,24 +105,27 @@ if st.session_state.video_info:
     if st.button("다운로드 시작", use_container_width=True):
         progress_bar = st.progress(0, text="다운로드를 준비 중입니다...")
         
-        def progress_hook(d):
-            if d['status'] == 'downloading':
-                total = d.get('total_bytes') or d.get('total_bytes_estimate')
-                if total: progress_bar.progress(d['downloaded_bytes'] / total, text=f"다운로드 중... {int(d['downloaded_bytes'] / total * 100)}%")
-            elif d['status'] == 'finished':
-                 progress_bar.progress(1.0, text="파일 처리 및 병합 중...")
-
-        # 파일 이름 오류를 원천적으로 방지
         info_dict = yt_dlp.YoutubeDL({'quiet': True, 'restrictfilenames': True}).extract_info(url, download=False)
         safe_title = info_dict['title']
         final_filename = f"{safe_title}.{selected_ext}"
 
         ydl_opts = {
-            'progress_hooks': [progress_hook],
+            'progress_hooks': [lambda d: progress_hook(d, progress_bar)],
             'ffmpeg_location': '/usr/bin/ffmpeg',
             'outtmpl': f"{safe_title}.%(ext)s",
             'restrictfilenames': True,
+            'http_headers': { # 403 Forbidden 우회를 위한 헤더 추가
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36',
+                'Accept-Language': 'en-US,en;q=0.5',
+            }
         }
+        
+        def progress_hook(d, bar):
+            if d['status'] == 'downloading':
+                total = d.get('total_bytes') or d.get('total_bytes_estimate')
+                if total: bar.progress(d['downloaded_bytes'] / total, text=f"다운로드 중... {int(d['downloaded_bytes'] / total * 100)}%")
+            elif d['status'] == 'finished':
+                 bar.progress(1.0, text="파일 처리 및 병합 중...")
 
         if download_type == "영상 + 음성":
             res_val = selected_res.replace('p', '')
@@ -126,12 +138,10 @@ if st.session_state.video_info:
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl: ydl.download([url])
-
             with open(final_filename, "rb") as file: file_bytes = file.read()
             st.session_state.download_result = { "file_name": final_filename, "file_bytes": file_bytes }
             os.remove(final_filename)
             progress_bar.empty()
-
         except Exception as e:
             st.error(f"다운로드 중 오류가 발생했습니다. (오류: {e})")
 
