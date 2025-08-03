@@ -1,4 +1,4 @@
-# app.py (v3.1 - 403 Forbidden 우회)
+# app.py (v3.2 - PC 프로그램 다운로드 링크 추가)
 
 import streamlit as st
 import yt_dlp
@@ -17,11 +17,8 @@ AUDIO_QUALITY_MAP = { "Best (최고 음질)": "0", "High (256k)": "2", "Standard
 @st.cache_data(ttl=3600)
 def fetch_video_info(url):
     try:
-        # 403 Forbidden 오류를 우회하기 위한 헤더 추가
         ydl_opts = {
-            'quiet': True, 
-            'no_warnings': True, 
-            'skip_download': True,
+            'quiet': True, 'no_warnings': True, 'skip_download': True,
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36',
                 'Accept-Language': 'en-US,en;q=0.5',
@@ -52,7 +49,17 @@ def get_available_formats(video_info):
 
 # --- 웹사이트 UI 구성 ---
 st.title("🚀 Pro Downloader")
-st.caption("v3.1")
+st.caption("v3.2")
+
+# --- <<< 새로운 섹션 시작 >>> ---
+with st.container(border=True):
+    st.warning("일부 동영상은 웹사이트에서 다운로드가 불가능합니다.\n\n다음 컴퓨터 프로그램을 사용하여 모든 동영상을 다운로드할 수 있습니다.", icon="⚠️")
+    st.link_button("💻 컴퓨터 프로그램 다운로드 링크", 
+                   "https://mega.nz/file/YG5USLyS#QryR9kHcb-4elfyL5v7U9jcDNXTRpmcPvv9ww94LpMk", 
+                   use_container_width=True)
+# --- <<< 새로운 섹션 끝 >>> ---
+
+st.divider()
 
 if 'video_info' not in st.session_state: st.session_state.video_info = None
 if 'download_result' not in st.session_state: st.session_state.download_result = None
@@ -114,7 +121,7 @@ if st.session_state.video_info:
             'ffmpeg_location': '/usr/bin/ffmpeg',
             'outtmpl': f"{safe_title}.%(ext)s",
             'restrictfilenames': True,
-            'http_headers': { # 403 Forbidden 우회를 위한 헤더 추가
+            'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36',
                 'Accept-Language': 'en-US,en;q=0.5',
             }
@@ -131,7 +138,7 @@ if st.session_state.video_info:
             res_val = selected_res.replace('p', '')
             ydl_opts['format'] = f'bestvideo[height<={res_val}][fps={selected_fps}]+bestaudio/bestvideo[height<={res_val}]+bestaudio/best'
             ydl_opts['merge_output_format'] = selected_ext
-        else: # 음원만
+        else:
             audio_quality = AUDIO_QUALITY_MAP.get(selected_quality_str, "5") if not is_lossless else "0"
             ydl_opts['format'] = 'bestaudio/best'
             ydl_opts['postprocessors'] = [{'key': 'FFmpegExtractAudio', 'preferredcodec': selected_ext, 'preferredquality': audio_quality}]
