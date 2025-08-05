@@ -1,4 +1,4 @@
-# app.py (v3.2 - PC 프로그램 다운로드 링크 추가)
+# app.py (v3.2 - PC Program Download Link)
 
 import streamlit as st
 import yt_dlp
@@ -51,20 +51,17 @@ def get_available_formats(video_info):
 st.title("🚀 Pro Downloader")
 st.caption("v3.2")
 
-# --- <<< 새로운 섹션 시작 >>> ---
 with st.container(border=True):
     st.warning("일부 동영상은 웹사이트에서 다운로드가 불가능합니다.\n\n다음 컴퓨터 프로그램을 사용하여 모든 동영상을 다운로드할 수 있습니다.", icon="⚠️")
     st.link_button("💻 컴퓨터 프로그램 다운로드 링크", 
                    "https://mega.nz/file/YG5USLyS#QryR9kHcb-4elfyL5v7U9jcDNXTRpmcPvv9ww94LpMk", 
                    use_container_width=True)
-# --- <<< 새로운 섹션 끝 >>> ---
 
 st.divider()
 
 if 'video_info' not in st.session_state: st.session_state.video_info = None
 if 'download_result' not in st.session_state: st.session_state.download_result = None
 
-# 1. URL 입력
 url = st.text_input("YouTube 영상 링크를 붙여넣으세요:", key="url_input")
 
 if st.button("정보 가져오기", use_container_width=True, type="primary"):
@@ -77,7 +74,6 @@ if st.button("정보 가져오기", use_container_width=True, type="primary"):
     else:
         st.warning("URL을 입력해주세요.")
 
-# 2. 영상 정보 및 다운로드 옵션 표시
 if st.session_state.video_info:
     info = st.session_state.video_info
     
@@ -152,7 +148,6 @@ if st.session_state.video_info:
         except Exception as e:
             st.error(f"다운로드 중 오류가 발생했습니다. (오류: {e})")
 
-# 3. 다운로드 버튼 표시
 if st.session_state.download_result:
     res = st.session_state.download_result
     st.success(f"'{res['file_name']}' 다운로드가 준비되었습니다!")
